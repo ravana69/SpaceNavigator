@@ -1,0 +1,493 @@
+<html>
+<title>Space Navigator</title>
+<canvas id="canvas" width="700" height="700" style="position: fixed; height: 100%; top:0;"></canvas>
+<p style="font-size:25px;position:fixed;right:10px;bottom:10px;">Arrow Keys</p>
+<script type="x-shader" id="vs">
+    attribute vec2 av;
+    varying vec2 vv;
+    void main () {
+        vv = av;
+        gl_Position = vec4(av*2.-1., 0., 1.);
+    }</script>
+<script type="x-shader" id="vo">
+	attribute vec2 av;
+    varying vec2 vv;
+    uniform sampler2D ut;
+    void main () {
+        vv = av;
+        gl_Position = vec4(texture2D(ut, av).xy,0,1);
+        gl_PointSize = 3.;
+    }</script>
+<script type="x-shader" id="fo">
+	#ifdef GL_FRAGMENT_PRECISION_HIGH
+		precision highp float;
+		#else
+		precision mediump float;
+		#endif
+	varying vec2 vv;
+	void main () {
+		gl_FragColor = vec4(vv,0,1);
+	}</script>
+<script type="x-shader" id="fb">
+	#ifdef GL_FRAGMENT_PRECISION_HIGH
+		precision highp float;
+		#else
+		precision mediump float;
+		#endif
+	#define n 8
+	varying vec2 vv;
+	uniform float ur;
+	uniform sampler2D ut;
+	uniform sampler2D up;
+	uniform float ui;
+	vec4 spl (int i) {return texture2D (up, vec2( mod(float(i),float(n))/float(n) ,  floor(float(i)/float(n))/float(n) ));}
+	void main () {
+		vec4 x = texture2D(ut, vv);
+		vec2 f = vec2(0);
+		for (int i = 0; i < n*n; i++) {
+			vec4 t = spl(i);
+			x.zw += 0.00000*normalize(t.xy-x.xy)*t.z/dot(t.xy-x.xy,t.xy-x.xy);
+		}
+		x.xy += x.zw;
+		gl_FragColor = x;
+		if (ui < 1.) gl_FragColor = vec4 (vv*2.-1., 0, 0);
+	}</script>
+<script type="x-shader" id="fs">
+	#ifdef GL_FRAGMENT_PRECISION_HIGH
+		precision highp float;
+		#else
+		precision mediump float;
+		#endif
+	varying vec2 vv;
+		uniform sampler2D ut;
+		uniform sampler2D up;
+		uniform sampler2D ul;
+		uniform float ur;
+		uniform float ui;
+		uniform vec3 usp;
+		uniform float uthrust;
+		uniform vec3 ucam;
+		uniform float ugforce;
+	#define pi 3.1415926
+	float spaceShip (float mag, vec2 v, vec2 w, float t) {
+		vec2 l = 65.*mag*(v-w)*mat2(sin(t),cos(t),-cos(t),sin(t));
+		l.y-=0.4;
+		vec2 z = vec2(0.);
+		for (int i = 0; i < 6; i++) {
+			float t = z.x*z.x - z.y*z.y + l.y;
+			z.y = 2.*z.x*z.y + l.x;
+			z.x = t;
+			if (dot(z,z)>5.) {break;};
+		}
+		float a = 2.*exp(-dot(z,z));
+		float b = atan(l.x,l.y);
+		a += uthrust*2.*exp(-b*b/(1.1-uthrust*uthrust)-0.1*dot(l,l));
+		return a;}
+	float stars (vec2 v) {
+		#define N 6
+		float s = 0.;
+		for (int i = 0; i < N; i++) {
+			float w = pi*float(i)/float(N);
+			float x = 25.*(v*mat2(sin(w),cos(w),-cos(w),sin(w))).x;
+			float t = sin(x)*sin(2.*x);
+			float b = (sin(0.0003*ui+0.2*v.x+0.3*v.y)*0.5+.6);
+			s += exp(-55.*b*b*t*t)/float(N);
+		}
+		return (1.-s)*(1.+0.5*log(texture2D(ul, fract(v*0.5)).x+1.));}
+	void main () {
+		vec2 v = (ucam.z*((vv)*2.-1.))*0.5+0.5 + ucam.xy-0.5;
+		vec2 spu = usp.xy;
+		float c = texture2D(up,vv).x;
+		float u = texture2D(up,vv+vec2(1,0)/ur).x;
+		float r = texture2D(up,vv+vec2(0,1)/ur).x;
+		vec2 ds = vec2(r-c,u-c)*ur;
+		vec4 x = texture2D(up,vv+0.0003*ds.yx);
+		float sp = spaceShip(ucam.z, v+0.001*ds.yx, spu , usp.z);
+		gl_FragColor = vec4(  + abs(x.zww) +
+				sp*(sin(2.*sp)*0.5+0.5) + (1.-x.y)*(1.-sp)*(
+					0.5+0.3*sin(-0.0064*ui+vec3(2,4,6)*(stars(v*2.-1.+0.001*ds.yx)))+
+					(vec3(0.9,0.99,0.5)*(-0.1*(c)))
+					),1);
+	}</script>
+<script type="x-shader" id="fp">
+	#ifdef GL_FRAGMENT_PRECISION_HIGH
+		precision highp float;
+		#else
+		precision mediump float;
+		#endif
+	#define n 8
+	varying vec2 vv;
+		uniform sampler2D up;
+		uniform sampler2D ut;
+		uniform float ui;
+		uniform float ur;
+		uniform float uthrust;
+		uniform vec3 usp;
+		uniform vec3 ucam;
+		uniform vec3 udcam;
+	vec4 spl (int i) {return texture2D (ut, vec2( mod(float(i),float(n))/float(n) ,  floor(float(i)/float(n))/float(n) ));}
+	float g (vec2 v){
+		float x = 0.;
+		vec4 t;
+		for (int i = 0; i < n*n; i++) {
+			t = spl(i);
+			x += 0.002*t.z/(dot(v-t.xy,v-t.xy));
+		}
+		return x;}
+	vec4 p (int a, int b) {
+		return texture2D(up,vec2(a,b)/ur + 
+			(vv+(ucam.xy-udcam.xy)/ucam.z)
+		);}
+	void main () {
+		vec2 v = (ucam.z*((vv)*2.-1.))*0.5+0.5 + ucam.xy-0.5;
+		vec2 u = v - usp.xy+vec2(0,0.01+0.02*uthrust)*mat2(sin(-usp.z),cos(-usp.z),-cos(-usp.z),sin(-usp.z));
+		vec4 x = p(0,0);
+		float b = exp(-80000.*dot(u,u));
+		x.y += 0.1*x.z + 7.*(0.05+0.4*uthrust)*b;
+		x.z += 0.1*(-x.y + 0.25*(p(1,0).y+p(0,1).y+p(-1,0).y+p(0,-1).y));
+		x.yz *= 0.999;
+		if (vv.x > 1.-1./ur || vv.y > 1.-1./ur || vv.x < 1./ur || vv.y < 1./ur || ui < 1.) x.yzw=vec3(0);
+		gl_FragColor = vec4(g(v),x.yzw);
+	}</script>
+<script type="x-shader" id="fw">
+	#ifdef GL_FRAGMENT_PRECISION_HIGH
+		precision highp float;
+		#else
+		precision mediump float;
+		#endif
+	#define n 8
+	#define pi 3.1415926
+	varying vec2 vv;
+	uniform sampler2D ut;
+	uniform vec3 ucam;
+	uniform float ui;
+	float noise (vec2 c){
+	  int x = 0x3504f333*int(c.x*c.x) + int(c.y);
+	  int y = 0xf1bbcdcb*int(c.y*c.y) + int(c.x);
+	  return float(x*y)*(2.0/8589934592.0)+0.5;}
+	void main () {
+		float i = floor(vv.x*float(n))+float(n)*floor(vv.y*float(n));
+		vec4 x = texture2D(ut,vv);
+		if (length(x.xy-ucam.xy) > 1.) {
+			float t = noise(vec2(ui,i));
+			x.z = -log(1.0001-noise(vec2(i+ucam.x,ui+ucam.y)));
+			x.xy = ucam.xy+.9*vec2(sin(100.*t),cos(100.*t));
+			x.w = noise(vec2(i,ui))*2.-1.;}
+		x.xy += 0.001*x.w*vec2(-1,0.8);
+		gl_FragColor = x;
+	}</script>
+<script type="x-shader" id="fl">
+	#ifdef GL_FRAGMENT_PRECISION_HIGH
+		precision highp float;
+		#else
+		precision mediump float;
+		#endif
+	#define pi 3.1415926
+	varying vec2 vv;
+	uniform sampler2D ul;
+	uniform float ui;
+	uniform float ur;
+	uniform vec3 usp;
+	vec4 l (int a, int b) {return texture2D(ul,fract(vv+vec2(a,b)/ur));}
+	void main () {
+		#define df vec4(.3,0.5,0.4,0.1)
+		vec4 x = l(0,0);
+		if (x.z < 0. || x.x < 0.4) x.x = 0.;
+		vec2 y = vv-fract(usp.xy+.5);
+		x.x *= max(0.,1.-3.*exp(-2500.*dot(y,y)));
+		x.x = x.x+x.x*(-x.y+x.w);
+		x.y = x.y*0.93 + 0.003*x.x;
+		x.w = x.w*0.9 + 0.03*x.x*x.z;
+		x.z = x.z+0.02*(1.-x.z)-0.017*x.x;
+		bool b = mod(vv.y*ur,2.) < 1.;
+
+		x = x*(1.-df) + df/6.*(
+			l(1,0)+l(0,1)+l(-1,0)+l(0,-1)
+			+l(b?1:-1,1) + l(b?1:-1,-1)
+			);
+		gl_FragColor = x;
+		if (ui < 1.) gl_FragColor = vec4(sin(4.*pi*vv.x)*cos(4.*pi*vv.y)>0.9?1:0,0,1,0);
+	}</script>
+
+<script type="text/javascript">
+var toHalf = (function() {
+
+  var floatView = new Float32Array(1);
+  var int32View = new Int32Array(floatView.buffer);
+
+  /* This method is faster than the OpenEXR implementation (very often
+   * used, eg. in Ogre), with the additional benefit of rounding, inspired
+   * by James Tursa?s half-precision code. */
+  return function toHalf(val) {
+
+    floatView[0] = val;
+    var x = int32View[0];
+
+    var bits = (x >> 16) & 0x8000; /* Get the sign */
+    var m = (x >> 12) & 0x07ff; /* Keep one extra bit for rounding */
+    var e = (x >> 23) & 0xff; /* Using int is faster here */
+
+    /* If zero, or denormal, or exponent underflows too much for a denormal
+     * half, return signed zero. */
+    if (e < 103) {
+      return bits;
+    }
+
+    /* If NaN, return NaN. If Inf or exponent overflow, return Inf. */
+    if (e > 142) {
+      bits |= 0x7c00;
+      /* If exponent was 0xff and one mantissa bit was set, it means NaN,
+           * not Inf, so make sure we set one mantissa bit too. */
+      bits |= ((e == 255) ? 0 : 1) && (x & 0x007fffff);
+      return bits;
+    }
+
+    /* If exponent underflows but not too much, return a denormal */
+    if (e < 113) {
+      m |= 0x0800;
+      /* Extra rounding may overflow and set mantissa to 0 and exponent
+       * to 1, which is OK. */
+      bits |= (m >> (114 - e)) + ((m >> (113 - e)) & 1);
+      return bits;
+    }
+
+    bits |= ((e - 112) << 10) | (m >> 1);
+    /* Extra rounding. An overflow will set mantissa to 0 and increment
+     * the exponent, which is OK. */
+    bits += m & 1;
+    return bits;
+  };}());
+function Framebuffer (gl, n, type, r) {
+	this.gl = gl;
+	this.type = type;
+	this.n = n;
+	this.r=r;
+	this.fbo = gl.createFramebuffer();
+	this.renderbuffer = gl.createRenderbuffer();
+	this.texture = gl.createTexture();
+	gl.activeTexture(gl['TEXTURE' + this.n]);
+	gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+	gl.bindTexture(gl.TEXTURE_2D, this.texture);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, r, r, 0, gl.RGBA, this.type, null);
+	gl.bindRenderbuffer(gl.RENDERBUFFER, this.renderbuffer);
+	gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, r, r);
+	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texture, 0);
+	gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.renderbuffer);
+	this.write = function (typedArray) {
+		var gl = this.gl;
+		gl.activeTexture(gl["TEXTURE" + this.n]);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, r, r, 0, gl.RGBA, this.type, typedArray);
+	}
+	this.source = function (element) {
+		var gl = this.gl;
+		gl.activeTexture(gl["TEXTURE" + this.n]);
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+	}
+    this.route = function () {
+        gl.activeTexture(gl["TEXTURE"+this.n]);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.bindFramebuffer(gl.FRAMEBUFFER,  this.fbo);
+        gl.viewport(0,0,this.r,this.r);
+    }}
+function grid (n) {
+	var arr = new Float32Array(n*n*12+12),sqr = [0,0,1,0,0,1, 1,1,1,0,0,1], i = 0;
+	for (j = 0; j < 12; j++) arr[i++] = sqr[j];
+	for (j = 0; j < n; j++)
+		for (k = 0; k < n; k++)
+			for (l = 0; l < 6; l++) {
+				arr[i++] = (sqr[l*2+0]+k)/n;
+				arr[i++] = (sqr[l*2+1]+j)/n;
+			}
+	return arr;}
+function main () {
+	var gl;
+	function createProgram (vstr, fstr) {
+        vstr = document.getElementById(vstr).textContent || vstr;
+        fstr = document.getElementById(fstr).textContent || fstr;
+		var program = gl.createProgram(),
+			vshader = createShader(vstr, gl.VERTEX_SHADER, gl),
+			fshader = createShader(fstr, gl.FRAGMENT_SHADER, gl);
+		gl.attachShader(program, vshader);
+		gl.attachShader(program, fshader);
+		gl.linkProgram(program);
+		if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+			throw gl.getProgramInfoLog(program);
+		}
+		return program;}
+	function createShader (str, type) {
+		var shader = gl.createShader(type);
+		gl.shaderSource(shader, str);
+		gl.compileShader(shader);
+		if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+			alert(gl.getShaderInfoLog(shader));
+			throw gl.getShaderInfoLog(shader);
+		}
+		return shader;}
+	function initAttrib (program) {
+        gl.useProgram(program);
+        var attrib = gl.getAttribLocation(program, 'av');
+	    gl.enableVertexAttribArray(attrib);
+	    gl.vertexAttribPointer(attrib, 2, gl.FLOAT, gl.FALSE, 0, 0);
+        return initAttrib;}
+    function setUni (program, name, args, int = false) {
+        gl.useProgram(program);
+        if (!program[name]) program[name] = gl.getUniformLocation (program, name);
+        if (int || typeof(args) == "boolean") gl.uniform1i(program[name], args);
+        else if (args.constructor == Array) gl["uniform" + args.length + "fv"](program[name], args);
+        else if (typeof(args) == "number") gl.uniform1f(program[name], args);
+		else if (args.constructor == Framebuffer) gl.uniform1i(program[name], args.n);
+        return setUni;}
+    function draw (program, dest=false, type=gl.TRIANGLES, a=0, b=6, clear = true) {
+	        gl.useProgram (program);
+	        if (dest) dest.route(); else {
+	            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	            gl.viewport(0, 0, canvas.width, canvas.height);
+	        }
+	        if (clear) gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	        gl.drawArrays(type,a,b);}
+	var canvas = document.getElementById("canvas");
+	gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+	var	n = 8,
+		r = 0,
+		ver = grid(r),
+		buffer = gl.createBuffer(),
+		ext = gl.getExtension('OES_texture_float'),
+		type = gl.FLOAT;//ext.HALF_FLOAT_OES;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, ver, gl.STATIC_DRAW);
+    var program = createProgram("vs", "fs"),
+    	under = createProgram("vs", "fp"),
+    	where = createProgram("vs", "fw"),
+    	life = createProgram("vs", "fl"),
+    	back = createProgram("vs", "fb"),
+    	proj = createProgram("vo", "fo"),
+    	planets = new Framebuffer (gl, 2, type, n),
+    	planets2 = new Framebuffer (gl, 3, type, n),
+    	fbo = new Framebuffer (gl, 0, type, canvas.width),
+    	fb1 = new Framebuffer (gl, 1, type, canvas.width),
+    	fb4 = new Framebuffer (gl, 4, type, 0.5*canvas.width),
+    	fb5 = new Framebuffer (gl, 5, type, 0.5*canvas.width),
+    	fb6 = new Framebuffer (gl, 6, type, r),
+    	fb7 = new Framebuffer (gl, 7, type, r),
+    	planetsArr = new Float32Array(4*n*n);
+	(function initPlanets() {
+	    for (var i = 0; i < n*n*4; i += 4) {
+	    	planetsArr[i+0] = 1.5*Math.random()-0.25;
+	    	planetsArr[i+0] += 0.1*Math.sign(planetsArr[i+0]-0.5);
+	    	planetsArr[i+1] = 1.5*Math.random()-0.25;
+	    	planetsArr[i+1] += 0.1*Math.sign(planetsArr[i+1]-0.5);
+	    	planetsArr[i+2] = -3*Math.log(Math.random());
+	    	planetsArr[i+3] = Math.random()*2.-1.;
+	    }})();
+    planets.write(planetsArr);
+    initAttrib(program);
+	    setUni(program, "ut", planets);
+	    setUni(under, "ut", planets);
+	    setUni(program, "ur", canvas.width);
+	    setUni(life, "ur", fb4.r);
+	    setUni(under, "ur", fbo.r);
+	    setUni(program, "un", n);
+	    setUni(back, "un", n);
+	    setUni(under, "un", n);
+	    setUni(back, "ur", r);
+    function gravity (a,b,i,dt,k) {
+    	var gforce = 0;
+    	for (var j = 0; j < k; j++) {
+	    	var x = a[0]-b[i+0],
+	    		y = a[1]-b[i+1],
+	    		rr = (x*x+y*y),
+	    		f = dt*b[i+2]/(k*rr);
+	    	gforce += f*rr;
+	   		a[3] += -0.003*f*(x/Math.sqrt(rr));
+	   		a[4] += -0.003*f*(y/Math.sqrt(rr));
+	   		a[0] += 0.00002*dt*a[3]/k/n/n;
+	    	a[1] += 0.00002*dt*a[4]/k/n/n;
+	    }
+	    return gforce;}
+    var fb_=true,
+    	j = 0,thrust=false,
+    	thrustN=0,
+    	spaceShip = [0.5,0.5,-1.5,0,0,0],
+    	cam = [0.5,0.5,2],
+    	dcam = [0,0,0],
+    	gforce = 0,
+    	dt = 0;
+    (function animate () {
+    	requestAnimationFrame(animate);
+	    	setUni(program, "ui", j);
+	    	setUni(under, "ui", j);
+	    	setUni(where, "ui", j);
+	    	setUni(life, "ui", j);
+	    	setUni(back, "ui", j);
+	    	setUni(proj, "ui", j++);
+	    	setUni(program, "usp", [spaceShip[0],spaceShip[1],spaceShip[2]]);
+	    	setUni(under, "usp", [spaceShip[0],spaceShip[1],spaceShip[2]]);
+	    	setUni(life, "usp", [spaceShip[0],spaceShip[1],spaceShip[2]]);
+	    	setUni(back, "usp", [spaceShip[0],spaceShip[1],spaceShip[2]]);
+	    	setUni(program, "ucam", cam);
+	    	setUni(where, "ucam", cam);
+	    	setUni(under, "ucam", cam);
+	    	setUni(under, "udcam", dcam);
+	    	setUni(program, "uthrust", thrustN);
+	    	setUni(under, "uthrust", thrustN);
+	    	setUni(program, "ugforce", dt);
+	    	setUni(under, "up", fb_?fb1:fbo);
+    	setUni(where, "ut", fb_?planets:planets2);
+    	draw (where, fb_?planets2:planets);
+    	draw(under, fb_?fbo:fb1);
+    	setUni(program, "up", fb_?fbo:fb1);
+    	setUni(program, "ul", fb_?fb5:fb4);
+    	for (var q = 0; q < 4; q++) {
+    		setUni(life, "ul", fb_?fb5:fb4);
+    		draw(life, fb_?fb4:fb5);
+    		fb_=!fb_;}
+    	setUni(back, "ut", fb_?fb7:fb6);
+    	setUni(back, "up", fb_?planets2:planets);
+    	//draw(back, fb_?fb6:fb7);
+    	setUni(proj, "ut", fb_?fb6:fb7);
+    	draw(program);
+    	//draw(proj, false, gl.POINTS, 6, ver.length/2-6, false);
+    	if (thrust) {
+    		thrustN += (0.1/Math.sqrt(1+dt*dt))*(1-thrustN);
+    		spaceShip[3] += 2*dt*Math.cos(spaceShip[2]);
+    		spaceShip[4] -= 2*dt*Math.sin(spaceShip[2]);}
+    	else thrustN -= 0.1*dt*thrustN;
+    	spaceShip[2] += 1.5*dt*spaceShip[5];
+    	dcam[0] = cam[0]; dcam[1] = cam[1];dcam[2] = cam[2];
+    	cam[0] = Math.floor(canvas.width/cam[2]*(cam[0]*0.95 + 0.05*spaceShip[0]))/canvas.width*cam[2];
+    	cam[1] = Math.floor(canvas.width/cam[2]*(cam[1]*0.95 + 0.05*spaceShip[1]))/canvas.width*cam[2];
+    	cam[2] =1;
+    	gl.bindFramebuffer(gl.FRAMEBUFFER, fb_?planets.fbo:planets2.fbo);
+    	gl.readPixels(0,0,n,n,gl.RGBA,type,planetsArr);
+    	dt = 1;
+		gforce = 0;
+		for (var i = 0; i < n*n*4; i+=4) 
+			gforce += gravity (spaceShip, planetsArr, i, dt, 10);
+    	fb_ = !fb_;
+    })();
+    document.onkeydown = function (e) {
+    	if (e.which == 38) {
+    		thrust = true;
+    	}
+    	if (e.which == 39) {
+    		spaceShip[5] = 0.05;
+    	}
+    	if (e.which == 37) {
+    		spaceShip[5] = -0.05;
+    	}}
+    document.onkeyup = function (e) {
+    	if (e.which == 38) thrust = false;
+    	if (e.which == 39) {
+    		spaceShip[5] = 0;
+    	}
+    	if (e.which == 37) {
+    		spaceShip[5] = 0;
+    	}}
+} window.onload = main;
+</script>
+</html>
